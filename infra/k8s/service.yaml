@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: autobot-futures
+spec:
+  selector:
+    app: autobot-futures
+  ports:
+    - name: metrics
+      port: 8000
+      targetPort: 8000

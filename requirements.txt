@@ -1,0 +1,22 @@
+# core
+ccxt>=2.7.0,<3.0.0
+pandas>=1.5.0
+numpy>=1.23.0
+
+# Orchestration & data
+prefect>=3.0.0,<4.0.0
+dvc>=2.33.0
+pyarrow>=11.0.0
+
+# Testing & resilience
+pytest>=7.1.0
+tenacity>=8.2.0
+
+# Configuration & env
+python-dotenv>=1.0.0
+
+# Monitoring & optimization
+prometheus-client>=0.16.0
+optuna>=3.1.0
+
+# GUI (tkinter is in stdlib; no pip install needed)

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autobot-futures
+  labels:
+    app: autobot-futures
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: autobot-futures
+  template:
+    metadata:
+      labels:
+        app: autobot-futures
+    spec:
+      containers:
+        - name: bot
+          image: YOUR_DOCKER_REGISTRY/autobot-futures:latest
+          imagePullPolicy: Always
+          env:
+            - name: MODE
+              value: "live"
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bot-secrets
+                  key: apiKey
+            - name: API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: bot-secrets
+                  key: apiSecret
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: "512Mi"
+            requests:
+              cpu: "0.2"
+              memory: "256Mi"
