@@ -55,21 +55,36 @@ jobs:
             ${{ secrets.REGISTRY_URL }}/${{ secrets.REGISTRY_USERNAME }}/autobot-futures:${{ github.sha }}
 
   deploy:
-    name: ☸️ Deploy to Kubernetes
+    name: ☸️ Deploy to a local Kind cluster
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Decode Kubeconfig
-        run: |
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > kubeconfig
-        # ensure kubectl sees this file:
-        env:
-          KUBECONFIG: ${{ github.workspace }}/kubeconfig
+      # 1) Install kind
+      - name: Set up kind
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          version: v0.17.0
 
+      # 2) Create a cluster named "ci"
+      - name: Create kind cluster
+        run: kind create cluster --name ci
+
+      # 3) Tell kubectl to talk to it
+      - name: Use kind kubeconfig
+        run: kubectl cluster-info --context kind-ci
+
+      # 4) Load your freshly built image into kind
+      - name: Load Docker image into kind
+        run: |
+          kind load docker-image \
+            ${{ secrets.REGISTRY_URL }}/${{ secrets.REGISTRY_USERNAME }}/autobot-futures:latest \
+            --name ci
+
+      # 5) Apply your k8s manifests (skip schema-validation if you like)
       - name: Apply Kubernetes manifests
         run: |
-          kubectl apply -f infra/k8s/deployment.yaml
-          kubectl apply -f infra/k8s/service.yaml
+          kubectl apply --validate=false -f infra/k8s/deployment.yaml
+          kubectl apply --validate=false -f infra/k8s/service.yaml
