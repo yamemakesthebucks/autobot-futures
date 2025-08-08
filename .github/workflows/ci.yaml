@@ -2,22 +2,27 @@
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   lint-and-test:
-    name: 🧪 Lint & Test
+    name: 🐍 Lint & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Setup Python
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install deps
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run tests
         run: pytest -q
 
@@ -26,39 +31,48 @@ jobs:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Log in to Docker registry
-        run: |
-          echo "${{ secrets.REGISTRY_PASSWORD }}" |
-            docker login ${{ secrets.REGISTRY_URL }} \
-              --username "${{ secrets.REGISTRY_USERNAME }}" \
-              --password-stdin
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ secrets.REGISTRY_URL }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
       - name: Build & push
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./Dockerfile
+          file: Dockerfile
           push: true
-          tags: ${{ secrets.REGISTRY_URL }}/autobot-futures:latest
+          tags: |
+            ${{ secrets.REGISTRY_URL }}/${{ secrets.REGISTRY_USERNAME }}/autobot-futures:latest
 
   deploy:
-    name: 🚀 Deploy to Kubernetes
+    name: 🚀 Deploy to K8s
     needs: build-and-push
     runs-on: ubuntu-latest
+    environment: production
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
-          version: 'latest'
-      - name: Decode Kubeconfig
+          version: v1.32.2
+
+      - name: Configure Kubeconfig
         run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" \
-            | base64 --decode > ~/.kube/config
-      - name: Apply manifests
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > ./kubeconfig
         env:
-          KUBECONFIG: ~/.kube/config
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+
+      - name: Deploy manifests
         run: |
+          export KUBECONFIG=./kubeconfig
           kubectl apply -f infra/k8s/deployment.yaml
           kubectl apply -f infra/k8s/service.yaml
