@@ -1,18 +1,64 @@
-name: CI
+﻿name: CI
 
-on: [push]
+on:
+  push:
+    branches: [ main ]
 
 jobs:
-  build:
+  lint-and-test:
+    name: 🧪 Lint & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Setup Python
-        uses: actions/setup-python@v2
-        with: python-version: '3.10'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run tests
         run: pytest -q
+
+  build-and-push:
+    name: 🐳 Build & Push Docker Image
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Log in to Docker registry
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" |
+            docker login ${{ secrets.REGISTRY_URL }} \
+              --username "${{ secrets.REGISTRY_USERNAME }}" \
+              --password-stdin
+      - name: Build & push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.REGISTRY_URL }}/autobot-futures:latest
+
+  deploy:
+    name: 🚀 Deploy to Kubernetes
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      - name: Decode Kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" \
+            | base64 --decode > ~/.kube/config
+      - name: Apply manifests
+        env:
+          KUBECONFIG: ~/.kube/config
+        run: |
+          kubectl apply -f infra/k8s/deployment.yaml
+          kubectl apply -f infra/k8s/service.yaml
