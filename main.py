@@ -9,6 +9,17 @@ from src.backtesting.backtester import Backtester
 from src.paper_trading.paper_trader import PaperTrader
 from src.deployment.dashboard import launch_dashboard
 
+# near your main entrypoint in main.py, after other imports
+import os
+
+if os.getenv("DASHBOARD", "0").lower() in ("1", "true", "yes", "on"):
+    try:
+        from src.deployment.dashboard import launch_dashboard
+        launch_dashboard()
+    except Exception as e:
+        print(f"[dashboard] skipped: {e}")
+
+
 def main():
     load_dotenv()
     cfg = Config()
@@ -36,3 +47,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

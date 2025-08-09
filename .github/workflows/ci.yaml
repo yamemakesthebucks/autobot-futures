@@ -1,78 +1,81 @@
-﻿name: CI
+﻿name: CI / CD
 
 on:
   push:
     branches: [ main ]
 
 env:
-  # full image reference
-  IMAGE: ${{ secrets.REGISTRY_URL }}/${{ secrets.REGISTRY_USERNAME }}/autobot-futures:latest
+  REGISTRY: docker.io
+  IMAGE_NAME: yamemakemons/autobot-futures
 
 jobs:
-  lint-and-test:
-    name: 🐍 Lint & Test
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with: python-version: "3.11"
-      - run: |
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - run: pytest -q
+      - name: Lint & Test
+        run: pytest -q
 
   build-and-push:
-    name: 🐋 Build & Push Docker Image
-    needs: lint-and-test
+    needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+      - uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.REGISTRY_URL }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
-      - name: Build & push
-        uses: docker/build-push-action@v4
+
+      - name: Prepare tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build & Push (verbose)
+        uses: docker/build-push-action@v6
         with:
           context: .
+          file: dockerfile
           push: true
-          load: true      # leaves the image in runner's Docker daemon
-          tags: ${{ env.IMAGE }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          no-cache: true
+          build-args: |
+          # show plain logs so we can see the real failure
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true
+        env:
+          DOCKER_BUILDKIT: 1
+          BUILDKIT_PROGRESS: plain
 
   deploy:
-    name: 🚀 Deploy to a local Kind cluster
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install kubectl & kind
+      - name: Prepare kubeconfig
         run: |
-          sudo apt-get update
-          sudo apt-get install -y curl
-          curl -Lo kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
-          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.21.0/kind-linux-amd64
-          chmod +x kind && sudo mv kind /usr/local/bin/
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
 
-      - name: Create kind cluster
-        run: kind create cluster --name ci
-
-      - name: Pull image from registry
-        run: docker pull ${{ env.IMAGE }}
-
-      - name: Load image into kind
-        run: kind load docker-image ${{ env.IMAGE }} --name ci
-
-      - name: Deploy to Kubernetes
+      - name: Update deployment to SHA tag
         run: |
-          kubectl apply -f infra/k8s/deployment.yaml
-          kubectl apply -f infra/k8s/service.yaml
-      - name: Show all resources
-        run: kubectl get all --namespace default
-
-      - name: Tear down Kind
-        if: always()
-        run: kind delete cluster --name ci
+          SHA_TAG=$(git rev-parse HEAD)
+          kubectl set image deployment/autobot-futures bot=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA_TAG} -n default
+          kubectl rollout status deployment/autobot-futures -n default
