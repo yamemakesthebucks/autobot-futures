@@ -14,23 +14,33 @@ spec:
       labels:
         app: autobot-futures
     spec:
+      # use the Docker Hub pull secret you created
+      imagePullSecrets:
+        - name: dockerhub-cred
+
       containers:
         - name: bot
-          image: YOUR_DOCKER_REGISTRY/autobot-futures:latest
+          image: docker.io/yamemakemons/autobot-futures:latest
           imagePullPolicy: Always
-          env:
-            - name: MODE
-              value: "live"
-            - name: API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: bot-secrets
-                  key: apiKey
-            - name: API_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: bot-secrets
-                  key: apiSecret
+
+          # infra/k8s/deployment.yaml  (only the env section shown)
+      env:
+        - name: MODE
+          value: "live"
+        - name: DASHBOARD
+          value: "0"              # ensure GUI stays off in K8s
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bot-secrets
+              key: apiKey
+        - name: API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bot-secrets
+              key: apiSecret
+
+
           resources:
             limits:
               cpu: "0.5"
